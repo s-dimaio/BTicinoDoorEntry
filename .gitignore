@@ -1,0 +1,17 @@
+# Ignore backup files
+bck/
+
+# Ignore certificates
+certs/
+
+# Ignore node modules
+node_modules/
+
+# Ignore json files
+json/
+
+# Ignore token
+token/
+
+# ignore main.js edits related to token management
+main.js
