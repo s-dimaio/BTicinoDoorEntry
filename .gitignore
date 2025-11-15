@@ -1,8 +1,12 @@
 # Ignore backup files
 bck/
 
-# Ignore certificates
-certs/
+# Ignore certificates in the repository root only
+/certs/
+
+# Ensure lib/certs (certificate helper code) is tracked
+!/lib/certs/
+!/lib/certs/**
 
 # Ignore node modules
 node_modules/
