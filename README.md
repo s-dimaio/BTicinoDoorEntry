@@ -304,10 +304,12 @@ certs/
 
 The library now includes **automatic certificate renewal** that works exactly like token refresh:
 
-- **Default Renewal Skew**: 30 days before expiry
+- **Default Renewal Skew**: 30 days before expiry (2,592,000 seconds)
 - **Automatic Scheduling**: Calculates and schedules renewal before expiration
+- **Polling Strategy**: Weekly background checks (every 7 days) to detect when renewal is due
 - **Event-Driven**: Emits `certificatesRefreshed` event when renewed
 - **Transparent**: Works in background without consumer intervention
+- **Production-Ready**: Uses polling instead of setTimeout to handle long certificate lifetimes (~8 months)
 
 **Basic Usage:**
 
