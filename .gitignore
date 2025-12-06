@@ -18,4 +18,4 @@ json/
 token/
 
 # ignore main.js edits related to token management
-main.js
+test_*.js

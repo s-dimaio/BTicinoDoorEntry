@@ -1,10 +1,11 @@
 # BTicino Door Entry 
 
-A reverse-engineered Node.js library and example implementation for controlling BTicino Door Entry gate openers via their cloud API and SIP protocol.
+A reverse-engineered Node.js library and example implementation for controlling BTicino Door Entry gate openers via cloud API and SIP protocol.
 
 ## Features
 
 - **Azure AD B2C Authentication**: Complete OAuth2 flow with automatic token refresh
+- **Automatic Certificate Refresh**: Certificates are renewed automatically before expiry (30-day skew)
 - **Local Debug Proxy**: Intercept and debug the authentication flow
 - **Device Registration**: Automated first-connection device registration sequence
 - **Certificate Provisioning**: Generate and provision client certificates for mTLS
@@ -25,7 +26,8 @@ A reverse-engineered Node.js library and example implementation for controlling 
 │   ├── api/
 │   │   └── BticinoApiClient.js         # API wrapper
 │   ├── certs/
-│   │   └── BticinoCertificates.js      # Certificate generation & provisioning
+│   │   ├── BticinoCertificates.js      # Certificate generation & provisioning
+│   │   └── BticinoCertificateManager.js # Automatic certificate renewal
 │   ├── sip/
 │   │   ├── BticinoSipClient.js         # SIP/TLS client
 │   │   └── BticinoControls.js          # High-level gate control
@@ -34,7 +36,6 @@ A reverse-engineered Node.js library and example implementation for controlling 
 ├── examples/
 │   ├── auth_and_save.js                # Complete auth + registration example
 │   └── open_from_saved.js              # Open gate using saved credentials
-├── main.js                              # Main entry point
 └── package.json
 ```
 
@@ -109,11 +110,15 @@ const certs = require('./certs/client-certs.json');
 // Initialize auth with saved tokens
 const auth = new BticinoAuthentication({
   autoOpenBrowser: false,
-  initialTokens: tokens,
-  sipClientId: sipAccount.clientId
+  initialTokens: tokens
 });
 
 await auth.authenticate();
+
+// Create API client with saved SIP client ID
+const api = auth.createApiClient({ 
+  sipClientId: sipAccount.clientId 
+});
 
 // Open gate
 await BticinoControls.openGate(
@@ -133,39 +138,92 @@ await BticinoControls.openGate(
 Main authentication orchestrator.
 
 **Constructor Options:**
-- `autoOpenBrowser` (boolean): Auto-open browser for login
-- `debug` (boolean): Enable debug logging
-- `initialTokens` (Object): Previously saved tokens
-- `sipClientId` (string): Previously registered SIP client ID
-- `proxyHost` (string): Proxy host (default: localhost)
-- `proxyPort` (number): Proxy port (default: 8080)
+- `autoOpenBrowser` (boolean): Auto-open browser for login (default: false)
+- `debug` (boolean): Enable debug logging (default: false)
+- `initialTokens` (Object): Previously saved tokens (default: null)
+- `proxyHost` (string): Proxy host for OAuth callback (default: localhost)
+- `proxyPort` (number): Proxy port for OAuth callback (default: 8080)
+- `autoRefresh` (boolean): Enable automatic token refresh (default: true)
+- `refreshSkewSec` (number): Seconds before token expiry to trigger refresh (default: 60)
+- `certificateRenewalSkewSec` (number): Seconds before cert expiry to renew (default: 2592000 = 30 days)
+- `unrefRefreshTimer` (boolean): Allow process exit with pending timers (default: true)
+- `installExitHooks` (boolean): Install SIGINT/SIGTERM handlers for cleanup (default: false)
+- `forceLogin` (boolean): Force re-login with prompt=login (default: false)
+- `timeoutMs` (number): Login timeout in milliseconds (default: 180000)
+- `autoStopOnAuth` (boolean): Stop proxy after auth code capture (default: true)
+- `successPage` (string|null): Custom HTML for OAuth callback success page (default: null)
 
 **Methods:**
-- `authenticate()`: Start authentication flow
-- `forceRefresh()`: Force token refresh
-- `registerDevice(options)`: Register device and provision certificates
-- `createApiClient(options)`: Create API client instance
-- `stop()`: Stop proxy and cleanup
+- `authenticate()`: Start authentication flow. Returns `Promise<{ tokens }>`
+- `setInitialTokens(tokens)`: Set tokens after construction (accepts Object or JSON string)
+- `ensureStarted()`: Ensure proxy is started (idempotent, safe to call multiple times). Returns `Promise`
+- `prepareLoginUrl()`: Generate login URL without starting flow. Returns `{ state, url, fullUrl }`
+- `waitForAuthorizationCode(state)`: Poll for auth code from callback. Returns `Promise<{ code, state }>`
+- `forceRefresh()`: Force token refresh immediately. Returns `Promise<{ tokens }>`
+- `registerDevice(options)`: Register device and provision certificates. Returns `Promise<result>`
+- `provisionCertificates(options)`: Force certificate provisioning for existing device. Returns `Promise<certs>`
+- `createApiClient(options)`: Create API client instance. Returns `BticinoApiClient`
+- `setCertificates(certPEM, privateKeyPem, renewalParams, meta)`: Set certificates and schedule auto-renewal. Returns `enrichedCerts`
+- `getCurrentCertificates()`: Get current certificates with metadata. Returns `enrichedCerts|null`
+- `forceRenewCertificates(overrideParams)`: Force immediate certificate renewal. Returns `Promise<enrichedCerts>`
+- `stop()`: Stop proxy server and cleanup
+- `shutdown()`: Graceful shutdown (stops proxy, clears timers, shuts down certificate manager)
+- `dispose()`: Alias for `shutdown()`
 
 **Events:**
-- `tokenCreated`: Emitted when tokens are obtained
-- `tokenRefreshed`: Emitted on token refresh
-- `deviceRegistered`: Emitted when device registration completes
-- `certificatesCreated`: Emitted when certificates are provisioned
+- `loginUrlCreated`: Emitted when interactive login required. Payload: `{ state, loginUrl, url }`
+- `tokenCreated`: Emitted when tokens obtained (initial or refresh). Payload: `(tokens, meta)` where `meta = { refresh?: true, scheduled?: true, immediate?: true }`
+- `tokenRefreshed`: Emitted ONLY on token refresh (not on initial login). Payload: `(tokens, meta)`
+- `deviceRegistered`: Emitted when device registration completes. Payload: `(result)`
+- `certificatesCreated`: Emitted when certificates provisioned. Payload: `(certs, meta)` where `meta = { initial?: true, renewal?: true, forced?: true, scheduled?: true }`
+- `certificatesRefreshed`: Emitted ONLY when certificates renewed (scheduled or forced). Payload: `(certs, meta)` where `meta = { renewal: true, forced?: true, scheduled?: true }`
 
 ### BticinoApiClient
 
 API wrapper for BTicino/Legrand endpoints.
 
+**Constructor Options:**
+- `sipClientId` (string): SIP client identifier (generated if not provided)
+- `debug` (boolean): Enable debug logging (default: false)
+- `subscriptionKey` (string): Override default API subscription key
+- `timeoutMs` (number): Request timeout in milliseconds (default: 30000)
+
 **Methods:**
-- `getPlants()`: List user plants
-- `getPlant(plantId)`: Get plant details
-- `getModules(plantId)`: List modules/devices
-- `getGatewayModuleId(plantId)`: Find gateway module ID
-- `getSipAccounts(gatewayId)`: Get SIP accounts for gateway
-- `getCurrentSipAccount(gatewayId)`: Get current user's SIP account
-- `registerSipAccount(gatewayId, options)`: Register new SIP account
-- `provisionClientCertificate(requestBody)`: Provision client certificate
+- `getSipClientId()`: Get current SIP client identifier. Returns `string`
+- `getPlants()`: List user plants. Returns `Promise<Array>`
+- `getPlant(plantId)`: Get plant details. Returns `Promise<Object>`
+- `getModules(plantId)`: List modules/devices. Returns `Promise<Array>`
+- `getGatewayModuleId(plantId)`: Find gateway module ID. Returns `Promise<string>`
+- `getSipAccounts(gatewayId)`: Get SIP accounts for gateway. Returns `Promise<Array>`
+- `getCurrentSipAccount(gatewayId)`: Get current user's SIP account. Returns `Promise<Object>`
+- `registerSipAccount(gatewayId, options)`: Register new SIP account. Returns `Promise<Object>`
+- `provisionClientCertificate(requestBody)`: Provision client certificate. Returns `Promise<Object>`
+
+### registerDevice(options)
+
+Register device and provision certificates.
+
+**Options:**
+- `plantId` (string): Plant UUID to target (required if `gatewayId` not provided)
+- `gatewayId` (string): Gateway module UUID (optional, inferred from plantId if omitted)
+- `clientName` (string): Custom name for SIP account registration (default: "first-connection")
+- `forceCertificates` (boolean): Force certificate provisioning even without new SIP registration (default: false)
+- `debug` (boolean): Enable verbose logging for registration flow (default: false)
+- `emitter` (EventEmitter): Optional custom event emitter (default: internal emitter forwarded to auth)
+
+**Returns:** `Promise<{ sipAccount, certificates }>`
+
+**Example:**
+```javascript
+const result = await auth.registerDevice({ 
+  plantId: plants[0].id,
+  clientName: 'My Smart Lock',
+  debug: true 
+});
+
+console.log('SIP Account:', result.sipAccount);
+console.log('Certificates:', result.certificates);
+```
 
 ### BticinoControls
 
@@ -226,7 +284,11 @@ certs/
   "username": "user@example.com",
   "userOid": "be372a9a-...",
   "sipPassword": "jk3Z2470",
-  "appId": null
+  "appId": null,
+  "plantId": "e914f49e-...",
+  "gatewayId": "318cc3ea-...",
+  "ownerId": "be372a9a-...",
+  "ownerEmail": "user@example.com"
 }
 ```
 
@@ -237,6 +299,45 @@ certs/
   "key": "-----BEGIN PRIVATE KEY-----\n..."
 }
 ```
+
+## Certificate Automatic Refresh
+
+The library now includes **automatic certificate renewal** that works exactly like token refresh:
+
+- **Default Renewal Skew**: 30 days before expiry
+- **Automatic Scheduling**: Calculates and schedules renewal before expiration
+- **Event-Driven**: Emits `certificatesRefreshed` event when renewed
+- **Transparent**: Works in background without consumer intervention
+
+**Basic Usage:**
+
+```javascript
+// Load certificates at startup
+const certs = loadCertificatesFromDisk();
+const sipAccount = loadSipAccountFromDisk();
+
+if (certs && sipAccount) {
+  // Initialize certificate manager with renewal params
+  auth.setCertificates(certs.cert, certs.key, {
+    ownerId: sipAccount.ownerId,
+    ownerEmail: sipAccount.ownerEmail,
+    deviceId: sipAccount.sipClientId,
+    plantId: sipAccount.plantId,
+    gatewayId: sipAccount.gatewayId
+  });
+}
+
+// Listen for automatic renewals
+auth.on('certificatesRefreshed', (certs, meta) => {
+  console.log('Certificates auto-renewed!');
+  console.log('New expiry:', certs.expiresAt);
+  saveCertificatesToDisk(certs.certPEM, certs.privateKeyPem);
+});
+
+// Force manual renewal if needed
+await auth.forceRenewCertificates();
+```
+
 
 ## Examples
 
