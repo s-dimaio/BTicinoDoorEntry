@@ -24,7 +24,7 @@ console.log('1️⃣ Testing config constants...');
 console.assert(config.SIP_SERVER === 'vdesip.bs.iotleg.com', 'SIP_SERVER should be set');
 console.assert(config.SIP_PORT === 5228, 'SIP_PORT should be 5228');
 console.assert(config.SIP_DOMAIN === 'gateway.bs.iotleg.com', 'SIP_DOMAIN should be set');
-console.assert(config.SIP_KEEPALIVE_INTERVAL === 5 * 60 * 1000, 'SIP_KEEPALIVE_INTERVAL should be 5 min');
+console.assert(config.SIP_KEEPALIVE_INTERVAL === 2 * 60 * 1000, 'SIP_KEEPALIVE_INTERVAL should be 2 min');
 console.assert(config.SIP_RECONNECT_DELAY === 10 * 1000, 'SIP_RECONNECT_DELAY should be 10 sec');
 console.assert(config.SIP_REGISTER_EXPIRES === 600, 'SIP_REGISTER_EXPIRES should be 600 sec');
 console.log('✅ Config constants are correct\n');
