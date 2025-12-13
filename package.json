@@ -1,9 +1,26 @@
 {
   "name": "bticino-door-entry",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "description": "BTicino Door Entry library with Azure B2C auth flow analysis",
-  "scripts": {},
-  "author": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test/sip_listener_integration.js && node test/certificate_lifecycle.js",
+    "test:integration": "node test/sip_listener_integration.js",
+    "test:lifecycle": "node test/certificate_lifecycle.js",
+    "test:exports": "node test/package_exports.js"
+  },
+  "keywords": [
+    "bticino",
+    "legrand",
+    "door-entry",
+    "intercom",
+    "doorbell",
+    "sip",
+    "smart-home",
+    "home-automation",
+    "iot"
+  ],
+  "author": "Simone Di Maio <simone.dimaio77@gmail.com> (https://github.com/s-dimaio)",
   "license": "MIT",
   "engines": {
     "node": ">=16"

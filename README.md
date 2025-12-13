@@ -6,13 +6,16 @@ A reverse-engineered Node.js library and example implementation for controlling 
 
 - **Azure AD B2C Authentication**: Complete OAuth2 flow with automatic token refresh
 - **Automatic Certificate Refresh**: Certificates are renewed automatically before expiry (30-day skew)
+- **Graceful Certificate Restart**: SIP listener automatically restarts with new certificates without service interruption
+- **Persistent Doorbell Listener**: Receive real-time doorbell notifications via SIP/TLS with automatic reconnection
 - **Local Debug Proxy**: Intercept and debug the authentication flow
 - **Device Registration**: Automated first-connection device registration sequence
 - **Certificate Provisioning**: Generate and provision client certificates for mTLS
-- **SIP Client**: Full SIP/TLS implementation for gate control commands
+- **SIP Client**: Full SIP/TLS implementation for gate control commands and doorbell events
 - **API Client**: Wrapper for BTicino/Legrand Developer API endpoints
 - **Token Management**: Automatic token refresh and persistence
-- **Event-Driven Architecture**: Emit events for tokens, registration, and certificates
+- **Event-Driven Architecture**: Centralized events for tokens, registration, certificates, and doorbell notifications
+- **Centralized Configuration**: All SIP and authentication constants in one place
 
 ## Project Structure
 
@@ -20,7 +23,7 @@ A reverse-engineered Node.js library and example implementation for controlling 
 .
 ├── lib/
 │   ├── auth/
-│   │   ├── BticinoAuthentication.js    # High-level auth orchestrator
+│   │   ├── BticinoAuthentication.js    # High-level auth orchestrator with SIP factory
 │   │   ├── BticinoProxy.js             # Local debug proxy for OAuth
 │   │   └── BticinoRegisterDevice.js    # Device registration flow
 │   ├── api/
@@ -29,13 +32,21 @@ A reverse-engineered Node.js library and example implementation for controlling 
 │   │   ├── BticinoCertificates.js      # Certificate generation & provisioning
 │   │   └── BticinoCertificateManager.js # Automatic certificate renewal
 │   ├── sip/
-│   │   ├── BticinoSipClient.js         # SIP/TLS client
+│   │   ├── BticinoSipClient.js         # SIP/TLS client (ephemeral connections)
+│   │   ├── BticinoSipListener.js       # Persistent SIP listener for doorbell
 │   │   └── BticinoControls.js          # High-level gate control
 │   └── config/
-│       └── config.js                    # Centralized configuration
+│       └── config.js                    # Centralized configuration (SIP, OAuth, API)
 ├── examples/
 │   ├── auth_and_save.js                # Complete auth + registration example
-│   └── open_from_saved.js              # Open gate using saved credentials
+│   ├── open_from_saved.js              # Open gate using saved credentials
+│   ├── listen_doorbell.js              # Persistent doorbell listener
+│   └── certificate_lifecycle_demo.js   # Certificate auto-refresh demo
+├── test/
+│   ├── sip_listener_integration.js     # Integration tests
+│   ├── certificate_lifecycle.js        # Certificate lifecycle tests
+│   └── package_exports.js              # Package API validation
+├── index.js                             # Main entry point with exports
 └── package.json
 ```
 
@@ -97,10 +108,10 @@ await auth.registerDevice({
 });
 ```
 
-### 2. Open Gate with Saved Credentials
+### 2. Listen for Doorbell Notifications
 
 ```javascript
-const BticinoControls = require('./lib/sip/BticinoControls');
+const { BticinoAuthentication } = require('bticino-door-entry');
 
 // Load saved data
 const tokens = require('./token/token_cache.json');
@@ -109,19 +120,55 @@ const certs = require('./certs/client-certs.json');
 
 // Initialize auth with saved tokens
 const auth = new BticinoAuthentication({
-  autoOpenBrowser: false,
-  initialTokens: tokens
+  initialTokens: tokens,
+  sipClientId: sipAccount.clientId,
+  debug: false
 });
 
 await auth.authenticate();
 
-// Create API client with saved SIP client ID
-const api = auth.createApiClient({ 
-  sipClientId: sipAccount.clientId 
+// Create persistent SIP listener (integrated!)
+const listener = auth.createSipListener(sipAccount, certs, {
+  debug: false,
+  keepAlive: true,
+  autoReconnect: true
 });
 
+// All SIP events are forwarded through auth with 'sip:' prefix
+auth.on('sip:connected', () => console.log('Connected to SIP server'));
+auth.on('sip:registered', () => console.log('Listening for doorbell...'));
+
+auth.on('sip:invite', (callInfo) => {
+  console.log('🔔 DOORBELL PRESSED!');
+  console.log('Time:', callInfo.timestamp);
+  console.log('From:', callInfo.from);
+});
+
+auth.on('sip:disconnected', () => console.warn('Disconnected (auto-reconnecting)'));
+auth.on('sip:error', (err) => console.error('Error:', err.message));
+
+// Certificate lifecycle (automatic graceful restart)
+auth.on('sip:certificatesUpdated', (newCerts) => {
+  console.log('Certificates updated - listener restarted automatically');
+  // Optionally save new certificates to disk
+});
+
+// Connect and register
+await listener.connect();
+await listener.register();
+```
+
+### 3. Open Gate with Saved Credentials
+
+```javascript
+const { openGate } = require('bticino-door-entry');
+
+// Load saved data
+const sipAccount = require('./token/sip_account.json');
+const certs = require('./certs/client-certs.json');
+
 // Open gate
-await BticinoControls.openGate(
+await openGate(
   gateId,
   plantId,
   certs.cert,
@@ -163,6 +210,7 @@ Main authentication orchestrator.
 - `registerDevice(options)`: Register device and provision certificates. Returns `Promise<result>`
 - `provisionCertificates(options)`: Force certificate provisioning for existing device. Returns `Promise<certs>`
 - `createApiClient(options)`: Create API client instance. Returns `BticinoApiClient`
+- `createSipListener(sipAccount, certs, opts)`: **NEW** Create persistent SIP listener for doorbell notifications with automatic certificate refresh. Returns `BticinoSipListener`
 - `setCertificates(certPEM, privateKeyPem, renewalParams, meta)`: Set certificates and schedule auto-renewal. Returns `enrichedCerts`
 - `getCurrentCertificates()`: Get current certificates with metadata. Returns `enrichedCerts|null`
 - `forceRenewCertificates(overrideParams)`: Force immediate certificate renewal. Returns `Promise<enrichedCerts>`
@@ -177,6 +225,14 @@ Main authentication orchestrator.
 - `deviceRegistered`: Emitted when device registration completes. Payload: `(result)`
 - `certificatesCreated`: Emitted when certificates provisioned. Payload: `(certs, meta)` where `meta = { initial?: true, renewal?: true, forced?: true, scheduled?: true }`
 - `certificatesRefreshed`: Emitted ONLY when certificates renewed (scheduled or forced). Payload: `(certs, meta)` where `meta = { renewal: true, forced?: true, scheduled?: true }`
+- **`sip:connected`**: **NEW** SIP listener connected to server
+- **`sip:disconnected`**: **NEW** SIP listener disconnected (may auto-reconnect)
+- **`sip:registered`**: **NEW** SIP REGISTER successful
+- **`sip:invite`**: **NEW** Incoming doorbell notification. Payload: `{ timestamp, from, to, callId }`
+- **`sip:message`**: **NEW** Incoming SIP MESSAGE. Payload: `{ from, to, body }`
+- **`sip:certificatesUpdated`**: **NEW** Listener certificates updated (graceful restart completed)
+- **`sip:certificateUpdateError`**: **NEW** Failed to update listener certificates
+- **`sip:error`**: **NEW** SIP listener error. Payload: `{ message, code }`
 
 ### BticinoApiClient
 
@@ -225,6 +281,73 @@ console.log('SIP Account:', result.sipAccount);
 console.log('Certificates:', result.certificates);
 ```
 
+### createSipListener(sipAccount, certs, opts)
+
+**NEW** Factory method in `BticinoAuthentication` to create persistent SIP listener for doorbell notifications.
+
+**Parameters:**
+- `sipAccount` (Object): SIP account from `deviceRegistered` event or saved data
+  - `sipUri` (string): SIP URI (e.g., "user_clientId@gateway.bs.iotleg.com")
+  - `sipPassword` (string): SIP password
+  - `plantId` (string): Plant ID
+  - `gatewayId` (string, optional): Gateway ID
+- `certs` (Object): Certificates from `certificatesCreated` event or saved data
+  - `cert` (string): Certificate PEM string
+  - `key` (string): Private key PEM string
+- `opts` (Object, optional): Listener options
+  - `debug` (boolean): Enable debug logging (inherits from auth if not specified)
+  - `keepAlive` (boolean): Re-register periodically (default: true)
+  - `autoReconnect` (boolean): Reconnect on disconnect (default: true)
+  - `keepAliveInterval` (number): Keep-alive interval in ms (default: from config)
+  - `reconnectDelay` (number): Reconnect delay in ms (default: from config)
+
+**Returns:** `BticinoSipListener` - Configured listener instance
+
+**Features:**
+- Automatic event forwarding through `auth` with `sip:` prefix
+- Integrated with certificate manager for graceful restart on certificate renewal
+- Automatic validation of sipAccount and certificates
+- Uses centralized SIP configuration from `config.js`
+
+**Example:**
+```javascript
+const listener = auth.createSipListener(sipAccount, certs, { debug: true });
+
+auth.on('sip:invite', (callInfo) => {
+  console.log('🔔 Doorbell!', callInfo);
+});
+
+await listener.connect();
+await listener.register();
+```
+
+### BticinoSipListener
+
+**NEW** Persistent SIP listener for receiving doorbell notifications.
+
+**Constructor:**
+```javascript
+new BticinoSipListener(sipConfig, certs, opts)
+```
+
+**Methods:**
+- `connect()`: Establish persistent TLS connection. Returns `Promise<void>`
+- `register()`: Send SIP REGISTER with digest auth. Returns `Promise<void>`
+- `disconnect()`: Gracefully close connection. Returns `Promise<void>`
+- `updateCertificates(newCerts)`: **NEW** Update certificates with graceful restart (disconnect, update, reconnect). Returns `Promise<void>`
+
+**Events:**
+- `connected`: TLS connection established
+- `disconnected`: Connection lost (may auto-reconnect if enabled)
+- `registered`: SIP REGISTER successful
+- `invite`: Incoming INVITE (doorbell). Payload: `{ timestamp, from, to, callId }`
+- `message`: Incoming MESSAGE. Payload: `{ from, to, body }`
+- `certificatesUpdated`: Certificates updated successfully with graceful restart
+- `certificateUpdateError`: Failed to update certificates
+- `error`: Error occurred. Payload: `{ message, code }`
+
+**Note:** When using `auth.createSipListener()`, all events are automatically forwarded through the `auth` object with `sip:` prefix for centralized event handling.
+
 ### BticinoControls
 
 High-level gate control.
@@ -234,7 +357,7 @@ High-level gate control.
 
 ### BticinoSipClient
 
-Low-level SIP client for custom implementations.
+Low-level SIP client for custom implementations (ephemeral connections).
 
 **Constructor:**
 ```javascript
@@ -300,9 +423,45 @@ certs/
 }
 ```
 
-## Certificate Automatic Refresh
+## Doorbell Notifications (Persistent Listener)
 
-The library now includes **automatic certificate renewal** that works exactly like token refresh:
+The library includes a **persistent SIP listener** for receiving real-time doorbell notifications:
+
+**Key Features:**
+- **Persistent Connection**: Maintains long-lived TLS connection to SIP server
+- **Automatic Reconnection**: Reconnects automatically if connection drops
+- **Keep-Alive**: Periodic re-registration to maintain SIP session
+- **Event-Driven**: Emits events for doorbell rings, connection status, and errors
+- **Graceful Certificate Updates**: Automatically restarts with new certificates during renewal
+- **Centralized Events**: All events forwarded through `auth` object with `sip:` prefix
+
+**Basic Usage:**
+
+```javascript
+const auth = new BticinoAuthentication({ initialTokens: savedTokens });
+await auth.authenticate();
+
+// Create listener using factory method (automatically integrated!)
+const listener = auth.createSipListener(sipAccount, certs);
+
+// Listen for doorbell events through auth (centralized)
+auth.on('sip:invite', (callInfo) => {
+  console.log('🔔 Doorbell pressed!');
+  console.log('Time:', callInfo.timestamp);
+  console.log('From:', callInfo.from);
+});
+
+auth.on('sip:connected', () => console.log('Listener connected'));
+auth.on('sip:registered', () => console.log('Listening for doorbell...'));
+
+// Start listening
+await listener.connect();
+await listener.register();
+```
+
+## Certificate Automatic Refresh with Graceful Restart
+
+The library includes **automatic certificate renewal with graceful restart** for the SIP listener:
 
 - **Default Renewal Skew**: 30 days before expiry (2,592,000 seconds)
 - **Automatic Scheduling**: Calculates and schedules renewal before expiration
@@ -310,6 +469,8 @@ The library now includes **automatic certificate renewal** that works exactly li
 - **Event-Driven**: Emits `certificatesRefreshed` event when renewed
 - **Transparent**: Works in background without consumer intervention
 - **Production-Ready**: Uses polling instead of setTimeout to handle long certificate lifetimes (~8 months)
+- **Graceful Restart**: When using `createSipListener()`, the listener automatically restarts with new certificates
+- **Service Continuity**: Minimal downtime (~1-2 seconds) during certificate update
 
 **Basic Usage:**
 
@@ -329,11 +490,21 @@ if (certs && sipAccount) {
   });
 }
 
-// Listen for automatic renewals
+// Create listener - will automatically update certificates when renewed
+const listener = auth.createSipListener(sipAccount, certs);
+
+// Listen for automatic certificate updates (graceful restart)
+auth.on('sip:certificatesUpdated', (newCerts) => {
+  console.log('Listener restarted with new certificates automatically!');
+  console.log('New expiry:', newCerts.expiresAt);
+  saveCertificatesToDisk(newCerts.cert, newCerts.key);
+});
+
+// Also listen for certificate manager renewals
 auth.on('certificatesRefreshed', (certs, meta) => {
   console.log('Certificates auto-renewed!');
   console.log('New expiry:', certs.expiresAt);
-  saveCertificatesToDisk(certs.certPEM, certs.privateKeyPem);
+  // Listener will automatically receive new certs and restart
 });
 
 // Force manual renewal if needed
@@ -350,6 +521,23 @@ See `examples/auth_and_save.js` for a complete example showing:
 2. Device registration with event handling
 3. Certificate provisioning
 4. Data persistence to disk
+
+### Doorbell Listener Example
+
+See `examples/listen_doorbell.js` for a persistent doorbell listener showing:
+1. Loading saved credentials from disk
+2. Creating integrated SIP listener with factory method
+3. Handling doorbell events with centralized event pattern
+4. Automatic certificate refresh with graceful restart
+5. Graceful shutdown handling
+
+### Certificate Lifecycle Demo
+
+See `examples/certificate_lifecycle_demo.js` for automatic certificate management:
+1. Automatic certificate renewal detection (30 days before expiry)
+2. Graceful listener restart with new certificates
+3. Zero-downtime certificate updates
+4. Event monitoring for certificate lifecycle
 
 ### Reusing Saved Credentials
 
