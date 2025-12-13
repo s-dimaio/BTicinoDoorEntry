@@ -72,15 +72,41 @@ async function main() {
   await auth.authenticate();
   console.log('✅ Authenticated');
 
-  // 4. Create listener using factory method (integrated!)
-  console.log('\n📞 Creating SIP listener...');
-  const listener = auth.createSipListener(sipAccount, certs, {
-    debug: true,  // Enable debug to see what's happening
-    keepAlive: true,
-    autoReconnect: true
-  });
+  // 4. Check if listener already exists (prevent duplications)
+  let listener;
+  if (auth.hasSipListener()) {
+    console.log('\n📞 Listener already exists - reusing...');
+    listener = auth.getSipListener();
+    
+    // Check if it's already connected
+    if (auth.isSipListenerConnected()) {
+      console.log('✅ Listener is already connected and registered');
+      console.log('🎧 Listening for doorbell... (Ctrl+C to exit)\n');
+    } else {
+      console.log('⚠️  Listener exists but not connected - reconnecting...');
+      await listener.connect();
+      await listener.register();
+    }
+  } else {
+    // 5. Create listener using factory method (integrated!)
+    console.log('\n📞 Creating new SIP listener...');
+    listener = auth.createSipListener(sipAccount, certs, {
+      debug: true,  // Enable debug to see what's happening
+      keepAlive: true,
+      autoReconnect: true
+    });
+  }
 
-  // 5. Event handlers - all SIP events are forwarded through auth with 'sip:' prefix
+  // 6. Event handlers - all SIP events are forwarded through auth with 'sip:' prefix
+  // (only set up once, even if listener already existed)
+  auth.removeAllListeners('sip:connected');
+  auth.removeAllListeners('sip:registered');
+  auth.removeAllListeners('sip:invite');
+  auth.removeAllListeners('sip:disconnected');
+  auth.removeAllListeners('sip:error');
+  auth.removeAllListeners('sip:certificatesUpdated');
+  auth.removeAllListeners('sip:certificateUpdateError');
+  
   auth.on('sip:connected', () => console.log('✅ Connected to SIP server'));
   auth.on('sip:registered', () => {
     console.log('✅ Registered\n');
@@ -111,12 +137,14 @@ async function main() {
     console.error('   Manual restart may be required');
   });
 
-  // 6. Connect
-  console.log('🚀 Starting listener...');
-  await listener.connect();
-  await listener.register();
+  // 7. Connect (only if we just created a new listener)
+  if (!listener.socket) {
+    console.log('🚀 Starting listener...');
+    await listener.connect();
+    await listener.register();
+  }
 
-  // 7. Graceful shutdown
+  // 8. Graceful shutdown
   process.on('SIGINT', async () => {
     console.log('\n\n👋 Shutting down...');
     await listener.disconnect();

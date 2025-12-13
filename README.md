@@ -156,6 +156,10 @@ auth.on('sip:certificatesUpdated', (newCerts) => {
 // Connect and register
 await listener.connect();
 await listener.register();
+
+// The example also shows how to prevent listener duplications:
+// See examples/listen_doorbell.js for complete implementation with
+// hasSipListener(), isSipListenerConnected(), and getSipListener()
 ```
 
 ### 3. Open Gate with Saved Credentials
@@ -211,6 +215,9 @@ Main authentication orchestrator.
 - `provisionCertificates(options)`: Force certificate provisioning for existing device. Returns `Promise<certs>`
 - `createApiClient(options)`: Create API client instance. Returns `BticinoApiClient`
 - `createSipListener(sipAccount, certs, opts)`: **NEW** Create persistent SIP listener for doorbell notifications with automatic certificate refresh. Returns `BticinoSipListener`
+- `hasSipListener()`: **NEW** Check if a SIP listener has been created (useful to prevent duplications). Returns `boolean`
+- `isSipListenerConnected()`: **NEW** Check if SIP listener is connected and registered (ready to receive calls). Returns `boolean`
+- `getSipListener()`: **NEW** Get current SIP listener instance or `null` if none exists. Returns `BticinoSipListener|null`
 - `setCertificates(certPEM, privateKeyPem, renewalParams, meta)`: Set certificates and schedule auto-renewal. Returns `enrichedCerts`
 - `getCurrentCertificates()`: Get current certificates with metadata. Returns `enrichedCerts|null`
 - `forceRenewCertificates(overrideParams)`: Force immediate certificate renewal. Returns `Promise<enrichedCerts>`

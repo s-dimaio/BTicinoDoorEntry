@@ -1,6 +1,6 @@
 {
   "name": "bticino-door-entry",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "BTicino Door Entry library with Azure B2C auth flow analysis",
   "main": "index.js",
   "scripts": {

@@ -157,6 +157,37 @@ try {
   process.exit(1);
 }
 
+// Test 7: Verify SIP listener tracking methods
+console.log('7️⃣ Testing SIP listener tracking methods (hasSipListener, isSipListenerConnected, getSipListener)...');
+try {
+  const auth2 = new BticinoAuthentication({ debug: false });
+  
+  // Initially no listener
+  console.assert(auth2.hasSipListener() === false, 'Should return false when no listener exists');
+  console.assert(auth2.isSipListenerConnected() === false, 'Should return false when no listener exists');
+  console.assert(auth2.getSipListener() === null, 'Should return null when no listener exists');
+  console.log('✅ Initial state: no listener');
+  
+  // Create listener
+  const listener = auth2.createSipListener(mockSipAccount, mockCerts);
+  console.assert(auth2.hasSipListener() === true, 'Should return true after creating listener');
+  console.assert(auth2.getSipListener() === listener, 'Should return the created listener');
+  console.log('✅ After creation: listener tracked');
+  
+  // Check connection status (initially not connected)
+  console.assert(auth2.isSipListenerConnected() === false, 'Should return false when not yet connected');
+  console.log('✅ Connection status: correctly reports not connected');
+  
+  // Simulate disconnection event to clear reference
+  listener.emit('disconnected');
+  console.assert(auth2.hasSipListener() === false, 'Should return false after disconnection event');
+  console.assert(auth2.getSipListener() === null, 'Should return null after disconnection event');
+  console.log('✅ After disconnection: listener reference cleared\n');
+} catch (err) {
+  console.error('❌ SIP listener tracking test failed:', err.message);
+  process.exit(1);
+}
+
 // Summary
 console.log('=' .repeat(60));
 console.log('✅ All integration tests passed!');
@@ -168,4 +199,5 @@ console.log('  ✅ Parameter validation working');
 console.log('  ✅ Listener creation with defaults');
 console.log('  ✅ Certificate aliases supported');
 console.log('  ✅ Custom options respected');
+console.log('  ✅ Listener tracking methods (hasSipListener, isSipListenerConnected, getSipListener)');
 console.log('\nThe SIP Listener is now fully integrated! 🎉\n');
