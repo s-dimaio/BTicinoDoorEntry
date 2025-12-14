@@ -35,13 +35,10 @@ function loadJson(filePath) {
 async function main() {
   const initialTokens = loadJson(TOKENS_PATH);
   const existingSip = loadJson(SIP_PATH);
-  const sipClientId = existingSip && existingSip.sipClientId ? String(existingSip.sipClientId) : undefined;
 
   const auth = new BticinoAuthentication({
-    autoOpenBrowser: true,
     debug: true,
-    initialTokens: initialTokens,
-    sipClientId: sipClientId
+    initialTokens: initialTokens
   });
 
   // Persist tokens whenever the library emits them

@@ -70,7 +70,6 @@ npm install
 const BticinoAuthentication = require('./lib/auth/BticinoAuthentication');
 
 const auth = new BticinoAuthentication({
-  autoOpenBrowser: true,
   debug: true
 });
 
@@ -189,7 +188,6 @@ await openGate(
 Main authentication orchestrator.
 
 **Constructor Options:**
-- `autoOpenBrowser` (boolean): Auto-open browser for login (default: false)
 - `debug` (boolean): Enable debug logging (default: false)
 - `initialTokens` (Object): Previously saved tokens (default: null)
 - `proxyHost` (string): Proxy host for OAuth callback (default: localhost)
