@@ -1,5 +1,6 @@
 # Ignore backup files
 bck/
+*.ps1
 
 # Ignore certificates in the repository root only
 /certs/
