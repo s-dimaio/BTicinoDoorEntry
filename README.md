@@ -209,7 +209,7 @@ Main authentication orchestrator.
 - `prepareLoginUrl()`: Generate login URL without starting flow. Returns `{ state, url, fullUrl }`
 - `waitForAuthorizationCode(state)`: Poll for auth code from callback. Returns `Promise<{ code, state }>`
 - `forceRefresh()`: Force token refresh immediately. Returns `Promise<{ tokens }>`
-- `registerDevice(options)`: Register device and provision certificates. Returns `Promise<result>`
+- `registerDevice(options)`: Register device and provision certificates (automatically reuses existing SIP accounts matching `clientId` or `clientName`). Options: `{ plantId, gatewayId, clientName, sipClientId, forceCertificates, async, debug }`. Returns `Promise<result>`
 - `provisionCertificates(options)`: Force certificate provisioning for existing device. Returns `Promise<certs>`
 - `createApiClient(options)`: Create API client instance. Returns `BticinoApiClient`
 - `createSipListener(sipAccount, certs, opts)`: **NEW** Create persistent SIP listener for doorbell notifications with automatic certificate refresh. Returns `BticinoSipListener`
@@ -230,14 +230,15 @@ Main authentication orchestrator.
 - `deviceRegistered`: Emitted when device registration completes. Payload: `(result)`
 - `certificatesCreated`: Emitted when certificates provisioned. Payload: `(certs, meta)` where `meta = { initial?: true, renewal?: true, forced?: true, scheduled?: true }`
 - `certificatesRefreshed`: Emitted ONLY when certificates renewed (scheduled or forced). Payload: `(certs, meta)` where `meta = { renewal: true, forced?: true, scheduled?: true }`
-- **`sip:connected`**: **NEW** SIP listener connected to server
-- **`sip:disconnected`**: **NEW** SIP listener disconnected (may auto-reconnect)
-- **`sip:registered`**: **NEW** SIP REGISTER successful
-- **`sip:invite`**: **NEW** Incoming doorbell notification. Payload: `{ timestamp, from, to, callId }`
-- **`sip:message`**: **NEW** Incoming SIP MESSAGE. Payload: `{ from, to, body }`
-- **`sip:certificatesUpdated`**: **NEW** Listener certificates updated (graceful restart completed)
-- **`sip:certificateUpdateError`**: **NEW** Failed to update listener certificates
-- **`sip:error`**: **NEW** SIP listener error. Payload: `{ message, code }`
+- **`sip:connected`**: SIP listener connected to server
+- **`sip:disconnected`**: SIP listener disconnected (may auto-reconnect)
+- **`sip:registered`**: Initial or reconnected SIP REGISTER successful
+- **`sip:keepalive`**: Periodic keep-alive SIP REGISTER successful
+- **`sip:invite`**: Incoming doorbell notification. Payload: `{ timestamp, from, to, callId }`
+- **`sip:message`**: Incoming SIP MESSAGE. Payload: `{ from, to, body }`
+- **`sip:certificatesUpdated`**: Listener certificates updated (graceful restart completed)
+- **`sip:certificateUpdateError`**: Failed to update listener certificates
+- **`sip:error`**: SIP listener error. Payload: `{ message, code }`
 
 ### BticinoApiClient
 

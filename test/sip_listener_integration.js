@@ -188,6 +188,49 @@ try {
   process.exit(1);
 }
 
+// Test 8: Verify registered vs keepalive event emission
+console.log('8️⃣ Testing registered vs keepalive event differentiation...');
+try {
+  const auth3 = new BticinoAuthentication({ debug: false });
+  const listener3 = auth3.createSipListener(mockSipAccount, mockCerts, { keepAlive: false });
+
+  let registeredCount = 0;
+  let keepaliveCount = 0;
+  let authSipRegisteredCount = 0;
+  let authSipKeepaliveCount = 0;
+
+  listener3.on('registered', () => { registeredCount++; });
+  listener3.on('keepalive', () => { keepaliveCount++; });
+  auth3.on('sip:registered', () => { authSipRegisteredCount++; });
+  auth3.on('sip:keepalive', () => { authSipKeepaliveCount++; });
+
+  const registerOkResponse = {
+    type: 'response',
+    statusCode: 200,
+    statusText: 'OK',
+    headers: { cseq: '1 REGISTER' }
+  };
+
+  // First 200 OK for REGISTER: should emit registered
+  listener3._handleResponse(registerOkResponse);
+  console.assert(registeredCount === 1, 'First REGISTER should emit registered');
+  console.assert(keepaliveCount === 0, 'First REGISTER should not emit keepalive');
+  console.assert(authSipRegisteredCount === 1, 'First REGISTER should forward sip:registered');
+  console.assert(authSipKeepaliveCount === 0, 'First REGISTER should not forward sip:keepalive');
+
+  // Second 200 OK for REGISTER: should emit keepalive
+  listener3._handleResponse(registerOkResponse);
+  console.assert(registeredCount === 1, 'Subsequent REGISTER should not emit registered again');
+  console.assert(keepaliveCount === 1, 'Subsequent REGISTER should emit keepalive');
+  console.assert(authSipRegisteredCount === 1, 'Subsequent REGISTER should not forward sip:registered again');
+  console.assert(authSipKeepaliveCount === 1, 'Subsequent REGISTER should forward sip:keepalive');
+
+  console.log('✅ Registered vs keepalive events correctly differentiated and forwarded\n');
+} catch (err) {
+  console.error('❌ Registered vs keepalive test failed:', err.message);
+  process.exit(1);
+}
+
 // Summary
 console.log('=' .repeat(60));
 console.log('✅ All integration tests passed!');
@@ -200,4 +243,5 @@ console.log('  ✅ Listener creation with defaults');
 console.log('  ✅ Certificate aliases supported');
 console.log('  ✅ Custom options respected');
 console.log('  ✅ Listener tracking methods (hasSipListener, isSipListenerConnected, getSipListener)');
+console.log('  ✅ Registered vs keepalive event differentiation');
 console.log('\nThe SIP Listener is now fully integrated! 🎉\n');
