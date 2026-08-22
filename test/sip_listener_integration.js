@@ -178,11 +178,12 @@ try {
   console.assert(auth2.isSipListenerConnected() === false, 'Should return false when not yet connected');
   console.log('✅ Connection status: correctly reports not connected');
   
-  // Simulate disconnection event to clear reference
+  // Simulate permanent closure to clear reference
+  listener._closing = true;
   listener.emit('disconnected');
-  console.assert(auth2.hasSipListener() === false, 'Should return false after disconnection event');
-  console.assert(auth2.getSipListener() === null, 'Should return null after disconnection event');
-  console.log('✅ After disconnection: listener reference cleared\n');
+  console.assert(auth2.hasSipListener() === false, 'Should return false after permanent disconnection');
+  console.assert(auth2.getSipListener() === null, 'Should return null after permanent disconnection');
+  console.log('✅ After permanent disconnection: listener reference cleared\n');
 } catch (err) {
   console.error('❌ SIP listener tracking test failed:', err.message);
   process.exit(1);
