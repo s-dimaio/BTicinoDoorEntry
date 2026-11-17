@@ -1,176 +1,172 @@
-# BTicino Door Entry 
+# BTicino Door Entry
 
-A reverse-engineered Node.js library and example implementation for controlling BTicino Door Entry gate openers via cloud API and SIP protocol.
+A reverse-engineered Node.js library and complete implementation for controlling BTicino / Legrand Door Entry intercom systems, receiving real-time doorbell and missed-call notifications via SIP/TLS, streaming live H.264 video via SRTP/RTSP, and extracting JPEG snapshots.
 
 ## Features
 
-- **Azure AD B2C Authentication**: Complete OAuth2 flow with automatic token refresh
-- **Automatic Certificate Refresh**: Certificates are renewed automatically before expiry (30-day skew)
+- **Azure AD B2C Authentication**: Complete OAuth2 flow with automatic token refresh and local reverse proxy
+- **Automatic Certificate Refresh**: Client mTLS certificates renewed automatically before expiry (30-day skew)
 - **Graceful Certificate Restart**: SIP listener automatically restarts with new certificates without service interruption
-- **Persistent Doorbell Listener**: Receive real-time doorbell notifications via SIP/TLS with automatic reconnection
-- **Local Debug Proxy**: Intercept and debug the authentication flow
-- **Device Registration**: Automated first-connection device registration sequence
-- **Certificate Provisioning**: Generate and provision client certificates for mTLS
-- **SIP Client**: Full SIP/TLS implementation for gate control commands and doorbell events
-- **API Client**: Wrapper for BTicino/Legrand Developer API endpoints
-- **Token Management**: Automatic token refresh and persistence
-- **Event-Driven Architecture**: Centralized events for tokens, registration, certificates, and doorbell notifications
-- **Centralized Configuration**: All SIP and authentication constants in one place
+- **Persistent Doorbell Listener**: Receive real-time doorbell ring, answered, missed call, and call-ended events via SIP/TLS with automatic reconnection
+- **Live Video Streaming Pipeline**: High-level video streamer orchestrating SIP video INVITE, SRTP payload decryption, and local RTSP loopback serving
+- **SRTP Decryption (RFC 3711)**: AES-128-CTR and HMAC-SHA1-80 decryption for encrypted video RTP packets
+- **On-Demand & Live JPEG Snapshot Extraction**: RFC 6184 H.264 NAL depacketizer with WebAssembly H.264 decoding and JPEG encoding
+- **Local RTSP Loopback Server (RFC 2326)**: Interleaved TCP/UDP streaming server compatible with Homey Pro (`createVideoRTSP`), VLC, and FFmpeg
+- **RTP Stream Continuity**: Seamless sequence number and timestamp continuity across transparent SIP video call renewals
+- **Gate / Lock Control**: Ephemeral SIP/TLS client for sending JSON-RPC `lock.setStatus` commands
+- **Device Registration & Provisioning**: Automated onboarding flow generating ECC P-256 keys and X.509 CSR with SIP URI SAN
+- **Developer API Wrapper**: Axios REST client for BTicino/Legrand Eliot developer endpoints
+- **Comprehensive Mock Test Suite**: Automated unit and integration tests running in-memory with zero external credentials required
 
 ## Project Structure
 
-```
+```text
 .
 ├── lib/
-│   ├── auth/
-│   │   ├── BticinoAuthentication.js    # High-level auth orchestrator with SIP factory
-│   │   ├── BticinoProxy.js             # Local debug proxy for OAuth
-│   │   └── BticinoRegisterDevice.js    # Device registration flow
 │   ├── api/
-│   │   └── BticinoApiClient.js         # API wrapper
+│   │   └── BticinoApiClient.js         # REST API wrapper (plants, modules, SIP accounts)
+│   ├── auth/
+│   │   ├── BticinoAuthentication.js    # High-level auth orchestrator with SIP & video factory
+│   │   ├── BticinoProxy.js             # Local reverse proxy for OAuth callback
+│   │   └── BticinoRegisterDevice.js    # Device onboarding & CSR provisioning flow
 │   ├── certs/
-│   │   ├── BticinoCertificates.js      # Certificate generation & provisioning
-│   │   └── BticinoCertificateManager.js # Automatic certificate renewal
+│   │   ├── BticinoCertificates.js      # ECC P-256 keypair & X.509 CSR generation
+│   │   └── BticinoCertificateManager.js # Automated certificate lifecycle & renewal
 │   ├── sip/
-│   │   ├── BticinoSipClient.js         # SIP/TLS client (ephemeral connections)
-│   │   ├── BticinoSipListener.js       # Persistent SIP listener for doorbell
-│   │   └── BticinoControls.js          # High-level gate control
+│   │   ├── BticinoSipClient.js         # Low-level SIP/TLS client (ephemeral connections)
+│   │   ├── BticinoSipListener.js       # Persistent SIP listener for doorbell notifications
+│   │   └── BticinoControls.js          # High-level gate open helper (openGate)
+│   ├── video/
+│   │   ├── BticinoVideoStreamer.js     # Video call lifecycle, SIP negotiation & RTP continuity
+│   │   ├── BticinoRtspLoopbackServer.js # Local RFC 2326 RTSP loopback server
+│   │   ├── BticinoSrtpDecryptor.js     # RFC 3711 AES-128-CTR SRTP packet decryptor
+│   │   └── BticinoSnapshotExtractor.js # RFC 6184 H.264 depacketizer & JPEG converter
 │   └── config/
-│       └── config.js                    # Centralized configuration (SIP, OAuth, API)
+│       └── config.js                   # Centralized configuration (SIP, OAuth, API)
 ├── examples/
 │   ├── auth_and_save.js                # Complete auth + registration example
 │   ├── open_from_saved.js              # Open gate using saved credentials
 │   ├── listen_doorbell.js              # Persistent doorbell listener
 │   └── certificate_lifecycle_demo.js   # Certificate auto-refresh demo
 ├── test/
-│   ├── sip_listener_integration.js     # Integration tests
-│   ├── certificate_lifecycle.js        # Certificate lifecycle tests
-│   └── package_exports.js              # Package API validation
-├── index.js                             # Main entry point with exports
+│   ├── sip_listener_integration.js     # SIP integration & event routing tests
+│   ├── certificate_lifecycle.js        # Certificate lifecycle & renewal tests
+│   ├── test_snapshot_jpeg.js           # YUV420 to JPEG encoding unit tests
+│   ├── test_video_stream.js            # SRTP, RTSP, and video pipeline integration tests
+│   └── package_exports.js              # Package public API validation
+├── index.js                            # Main package entry point and exports
 └── package.json
 ```
 
 ## Installation
 
+Install directly from GitHub:
+
 ```bash
-npm install
+npm install git+https://github.com/s-dimaio/BTicinoDoorEntry.git
+```
+
+Or install by package name if published in your registry:
+
+```bash
+npm install bticino-door-entry
 ```
 
 ## Requirements
 
 - Node.js >= 16
-- BTicino/Legrand account
-- Access to a BTicino gate opener device
+- Legrand / BTicino user account
+- BTicino Door Entry system (EasyKit, Classe 100X, or compatible)
 
 ## Quick Start
 
 ### 1. First Time Setup (Authentication & Registration)
 
 ```javascript
-const BticinoAuthentication = require('./lib/auth/BticinoAuthentication');
+const { BticinoAuthentication } = require('bticino-door-entry');
 
 const auth = new BticinoAuthentication({
   debug: true
 });
 
-// Listen for token events
+// Listen for tokens
 auth.on('tokenCreated', (tokens) => {
   console.log('Tokens received:', tokens);
-  // Save tokens to disk
 });
 
 // Listen for device registration
 auth.on('deviceRegistered', (payload) => {
-  console.log('Device registered:', payload);
-  // Save SIP account details
+  console.log('SIP Account registered:', payload);
 });
 
 // Listen for certificates
 auth.on('certificatesCreated', (info) => {
-  console.log('Certificates created');
-  // Save cert and key to disk
+  console.log('Certificates provisioned:', info);
 });
 
-// Start authentication
+// Start interactive authentication
 const { tokens } = await auth.authenticate();
 
 // Create API client
 const api = auth.createApiClient({ debug: true });
-
-// Get plants
 const plants = await api.getPlants();
 
-// Register device (creates SIP account + certificates)
-await auth.registerDevice({ 
+// Register device (provisions SIP account + mTLS certificates)
+await auth.registerDevice({
   plantId: plants[0].id,
-  debug: true 
+  debug: true
 });
 ```
+
+---
 
 ### 2. Listen for Doorbell Notifications
 
 ```javascript
 const { BticinoAuthentication } = require('bticino-door-entry');
 
-// Load saved data
-const tokens = require('./token/token_cache.json');
-const sipAccount = require('./token/sip_account.json');
-const certs = require('./certs/client-certs.json');
-
-// Initialize auth with saved tokens
 const auth = new BticinoAuthentication({
-  initialTokens: tokens,
-  sipClientId: sipAccount.clientId,
+  initialTokens: savedTokens,
   debug: false
 });
 
 await auth.authenticate();
 
-// Create persistent SIP listener (integrated!)
+// Create persistent SIP listener
 const listener = auth.createSipListener(sipAccount, certs, {
-  debug: false,
   keepAlive: true,
   autoReconnect: true
 });
 
-// All SIP events are forwarded through auth with 'sip:' prefix
+// Listen for doorbell events
+auth.on('sip:invite', (callInfo) => {
+  console.log('Doorbell pressed!', callInfo.timestamp, 'from:', callInfo.from);
+});
+
+auth.on('sip:callMissed', (callInfo) => {
+  console.log('Doorbell call missed:', callInfo.reason);
+});
+
+auth.on('sip:callAnswered', (callInfo) => {
+  console.log('Doorbell call answered on another unit');
+});
+
 auth.on('sip:connected', () => console.log('Connected to SIP server'));
 auth.on('sip:registered', () => console.log('Listening for doorbell...'));
-
-auth.on('sip:invite', (callInfo) => {
-  console.log('🔔 DOORBELL PRESSED!');
-  console.log('Time:', callInfo.timestamp);
-  console.log('From:', callInfo.from);
-});
-
 auth.on('sip:disconnected', () => console.warn('Disconnected (auto-reconnecting)'));
-auth.on('sip:error', (err) => console.error('Error:', err.message));
-
-// Certificate lifecycle (automatic graceful restart)
-auth.on('sip:certificatesUpdated', (newCerts) => {
-  console.log('Certificates updated - listener restarted automatically');
-  // Optionally save new certificates to disk
-});
 
 // Connect and register
 await listener.connect();
 await listener.register();
-
-// The example also shows how to prevent listener duplications:
-// See examples/listen_doorbell.js for complete implementation with
-// hasSipListener(), isSipListenerConnected(), and getSipListener()
 ```
+
+---
 
 ### 3. Open Gate with Saved Credentials
 
 ```javascript
 const { openGate } = require('bticino-door-entry');
 
-// Load saved data
-const sipAccount = require('./token/sip_account.json');
-const certs = require('./certs/client-certs.json');
-
-// Open gate
 await openGate(
   gateId,
   plantId,
@@ -181,474 +177,241 @@ await openGate(
 );
 ```
 
+---
+
+### 4. Live Video Streaming & On-Demand Snapshots
+
+```javascript
+const { BticinoAuthentication } = require('bticino-door-entry');
+
+const auth = new BticinoAuthentication({ initialTokens: savedTokens });
+await auth.authenticate();
+auth.setSipAccount(sipAccount);
+auth.setCertificates(certs.cert, certs.key);
+
+// Option A: Capture a single on-demand JPEG snapshot (ephemeral or reusing active stream)
+const jpegBuffer = await auth.captureCameraSnapshot(cameraModuleId, {
+  cameraIndex: 1,
+  forceFresh: true,
+  timeoutMs: 15000
+});
+
+// Option B: Start a persistent live RTSP stream
+const streamer = auth.createVideoStreamer(sipAccount, certs, {
+  debug: false
+});
+
+auth.on('video:keyframe', (keyframeBuf) => {
+  console.log('New H.264 keyframe received:', keyframeBuf.length, 'bytes');
+});
+
+auth.on('video:jpeg', (jpegBuf) => {
+  console.log('New JPEG snapshot ready:', jpegBuf.length, 'bytes');
+});
+
+// Start video stream session on local RTSP loopback server
+const { rtspUrl } = await streamer.startStream(cameraModuleId, { cameraIndex: 1 });
+console.log('Local RTSP stream available at:', rtspUrl);
+
+// Retrieve latest cached snapshot at any time
+if (streamer.hasJpegSnapshot()) {
+  const latestJpeg = streamer.getLatestJpegSnapshot();
+}
+
+// Stop video session when done
+await streamer.stopStream();
+```
+
+---
+
 ## API Reference
 
 ### BticinoAuthentication
 
-Main authentication orchestrator.
+Main authentication orchestrator managing OAuth2 tokens, certificate renewals, and factory methods.
 
 **Constructor Options:**
-- `debug` (boolean): Enable debug logging (default: false)
-- `initialTokens` (Object): Previously saved tokens (default: null)
-- `proxyHost` (string): Proxy host for OAuth callback (default: localhost)
-- `proxyPort` (number): Proxy port for OAuth callback (default: 8080)
-- `autoRefresh` (boolean): Enable automatic token refresh (default: true)
-- `refreshSkewSec` (number): Seconds before token expiry to trigger refresh (default: 60)
-- `certificateRenewalSkewSec` (number): Seconds before cert expiry to renew (default: 2592000 = 30 days)
-- `unrefRefreshTimer` (boolean): Allow process exit with pending timers (default: true)
-- `installExitHooks` (boolean): Install SIGINT/SIGTERM handlers for cleanup (default: false)
-- `forceLogin` (boolean): Force re-login with prompt=login (default: false)
-- `timeoutMs` (number): Login timeout in milliseconds (default: 180000)
-- `autoStopOnAuth` (boolean): Stop proxy after auth code capture (default: true)
-- `successPage` (string|null): Custom HTML for OAuth callback success page (default: null)
+- `debug` (boolean): Enable debug logging (default: `false`)
+- `initialTokens` (Object): Previously saved tokens (default: `null`)
+- `proxyHost` (string): Proxy host for OAuth callback (default: `localhost`)
+- `proxyPort` (number): Proxy port for OAuth callback (default: `8080`)
+- `autoRefresh` (boolean): Enable automatic token refresh (default: `true`)
+- `refreshSkewSec` (number): Seconds before token expiry to trigger refresh (default: `60`)
+- `certificateRenewalSkewSec` (number): Seconds before cert expiry to renew (default: `2592000` = 30 days)
+- `unrefRefreshTimer` (boolean): Allow process exit with pending timers (default: `true`)
+- `installExitHooks` (boolean): Install SIGINT/SIGTERM handlers for cleanup (default: `false`)
+- `forceLogin` (boolean): Force re-login with `prompt=login` (default: `false`)
+- `timeoutMs` (number): Login timeout in milliseconds (default: `180000`)
+- `autoStopOnAuth` (boolean): Stop proxy after auth code capture (default: `true`)
+- `successPage` (string|null): Custom HTML for OAuth callback success page (default: `null`)
 
 **Methods:**
 - `authenticate()`: Start authentication flow. Returns `Promise<{ tokens }>`
 - `setInitialTokens(tokens)`: Set tokens after construction (accepts Object or JSON string)
-- `ensureStarted()`: Ensure proxy is started (idempotent, safe to call multiple times). Returns `Promise`
+- `ensureStarted()`: Ensure proxy is started (idempotent). Returns `Promise`
 - `prepareLoginUrl()`: Generate login URL without starting flow. Returns `{ state, url, fullUrl }`
 - `waitForAuthorizationCode(state)`: Poll for auth code from callback. Returns `Promise<{ code, state }>`
 - `forceRefresh()`: Force token refresh immediately. Returns `Promise<{ tokens }>`
-- `registerDevice(options)`: Register device and provision certificates (automatically reuses existing SIP accounts matching `clientId` or `clientName`). Options: `{ plantId, gatewayId, clientName, sipClientId, forceCertificates, async, debug }`. Returns `Promise<result>`
+- `registerDevice(options)`: Register device and provision certificates. Options: `{ plantId, gatewayId, clientName, sipClientId, forceCertificates, async, debug }`. Returns `Promise<result>`
 - `provisionCertificates(options)`: Force certificate provisioning for existing device. Returns `Promise<certs>`
 - `createApiClient(options)`: Create API client instance. Returns `BticinoApiClient`
-- `createSipListener(sipAccount, certs, opts)`: **NEW** Create persistent SIP listener for doorbell notifications with automatic certificate refresh. Returns `BticinoSipListener`
-- `hasSipListener()`: **NEW** Check if a SIP listener has been created (useful to prevent duplications). Returns `boolean`
-- `isSipListenerConnected()`: **NEW** Check if SIP listener is connected and registered (ready to receive calls). Returns `boolean`
-- `getSipListener()`: **NEW** Get current SIP listener instance or `null` if none exists. Returns `BticinoSipListener|null`
+- `createSipListener(sipAccount, certs, opts)`: Create persistent SIP listener for doorbell notifications. Returns `BticinoSipListener`
+- `hasSipListener()`: Check if a SIP listener has been created. Returns `boolean`
+- `isSipListenerConnected()`: Check if SIP listener is connected and registered. Returns `boolean`
+- `getSipListener()`: Get current SIP listener instance or `null`. Returns `BticinoSipListener|null`
+- `setSipAccount(sipAccount)`: Store SIP account credentials on the orchestrator
+- `getSipAccount()`: Retrieve stored SIP account credentials or `null`
+- `createVideoStreamer(sipAccount, certs, opts)`: Create video streamer instance for live camera feeds and snapshots. Returns `BticinoVideoStreamer`
+- `hasVideoStreamer()`: Check if a video streamer instance exists. Returns `boolean`
+- `getVideoStreamer()`: Get current video streamer instance or `null`. Returns `BticinoVideoStreamer|null`
+- `stopVideoStreamer()`: Stop and dispose the current video streamer. Returns `Promise<void>`
+- `captureCameraSnapshot(cameraId, options)`: Capture a single JPEG snapshot (reusing active stream if matching, or spawning an ephemeral session). Returns `Promise<Buffer>`
 - `setCertificates(certPEM, privateKeyPem, renewalParams, meta)`: Set certificates and schedule auto-renewal. Returns `enrichedCerts`
 - `getCurrentCertificates()`: Get current certificates with metadata. Returns `enrichedCerts|null`
 - `forceRenewCertificates(overrideParams)`: Force immediate certificate renewal. Returns `Promise<enrichedCerts>`
 - `stop()`: Stop proxy server and cleanup
-- `shutdown()`: Graceful shutdown (stops proxy, clears timers, shuts down certificate manager)
+- `shutdown()`: Graceful shutdown (stops proxy, listener, streamer, and clears timers)
 - `dispose()`: Alias for `shutdown()`
 
 **Events:**
-- `loginUrlCreated`: Emitted when interactive login required. Payload: `{ state, loginUrl, url }`
-- `tokenCreated`: Emitted when tokens obtained (initial or refresh). Payload: `(tokens, meta)` where `meta = { refresh?: true, scheduled?: true, immediate?: true }`
-- `tokenRefreshed`: Emitted ONLY on token refresh (not on initial login). Payload: `(tokens, meta)`
-- `deviceRegistered`: Emitted when device registration completes. Payload: `(result)`
-- `certificatesCreated`: Emitted when certificates provisioned. Payload: `(certs, meta)` where `meta = { initial?: true, renewal?: true, forced?: true, scheduled?: true }`
-- `certificatesRefreshed`: Emitted ONLY when certificates renewed (scheduled or forced). Payload: `(certs, meta)` where `meta = { renewal: true, forced?: true, scheduled?: true }`
-- **`sip:connected`**: SIP listener connected to server
-- **`sip:disconnected`**: SIP listener disconnected (may auto-reconnect)
-- **`sip:registered`**: Initial or reconnected SIP REGISTER successful
-- **`sip:keepalive`**: Periodic keep-alive SIP REGISTER successful
-- **`sip:invite`**: Incoming doorbell notification. Payload: `{ timestamp, from, to, callId }`
-- **`sip:message`**: Incoming SIP MESSAGE. Payload: `{ from, to, body }`
-- **`sip:certificatesUpdated`**: Listener certificates updated (graceful restart completed)
-- **`sip:certificateUpdateError`**: Failed to update listener certificates
-- **`sip:error`**: SIP listener error. Payload: `{ message, code }`
+- `loginUrlCreated`: Emitted when interactive login is required: `{ state, loginUrl, url }`
+- `tokenCreated`: Emitted when tokens are obtained: `(tokens, meta)`
+- `tokenRefreshed`: Emitted on token refresh: `(tokens, meta)`
+- `deviceRegistered`: Emitted when device registration completes: `(result)`
+- `certificatesCreated`: Emitted when certificates are provisioned: `(certs, meta)`
+- `certificatesRefreshed`: Emitted when certificates are renewed: `(certs, meta)`
+- `sip:connected`: SIP listener connected to server
+- `sip:disconnected`: SIP listener disconnected (may auto-reconnect)
+- `sip:registered`: Initial or reconnected SIP REGISTER successful
+- `sip:keepalive`: Periodic keep-alive confirmed by server
+- `sip:invite`: Incoming doorbell call: `{ timestamp, from, to, callId }`
+- `sip:callMissed`: Doorbell call ended unanswered: `callContext`
+- `sip:callAnswered`: Doorbell call answered by another device: `callContext`
+- `sip:callEnded`: SIP call terminated by server: `{ method, ... }`
+- `sip:message`: Incoming SIP MESSAGE: `{ from, to, body }`
+- `sip:certificatesUpdated`: Listener restarted with new certificates
+- `sip:certificateUpdateError`: Failed to update listener certificates
+- `sip:error`: SIP listener error: `{ message, code }`
+- `video:keyframe`: Raw Annex-B H.264 IDR keyframe received: `(keyframeBuffer)`
+- `video:snapshot`: Alias for `video:keyframe`: `(keyframeBuffer)`
+- `video:jpeg`: Encoded JPEG snapshot ready: `(jpegBuffer)`
+- `video:rtp`: Decrypted plaintext RTP packet: `(rtpPacket)`
+- `video:stopped`: Video session terminated
+- `video:streamStopped`: Alias for `video:stopped`
+- `video:error`: Video streaming error: `(error)`
 
-### BticinoApiClient
+---
 
-API wrapper for BTicino/Legrand endpoints.
+### BticinoVideoStreamer
 
-**Constructor Options:**
-- `sipClientId` (string): SIP client identifier (generated if not provided)
-- `debug` (boolean): Enable debug logging (default: false)
-- `subscriptionKey` (string): Override default API subscription key
-- `timeoutMs` (number): Request timeout in milliseconds (default: 30000)
-
-**Methods:**
-- `getSipClientId()`: Get current SIP client identifier. Returns `string`
-- `getPlants()`: List user plants. Returns `Promise<Array>`
-- `getPlant(plantId)`: Get plant details. Returns `Promise<Object>`
-- `getModules(plantId)`: List modules/devices. Returns `Promise<Array>`
-- `getGatewayModuleId(plantId)`: Find gateway module ID. Returns `Promise<string>`
-- `getSipAccounts(gatewayId)`: Get SIP accounts for gateway. Returns `Promise<Array>`
-- `getCurrentSipAccount(gatewayId)`: Get current user's SIP account. Returns `Promise<Object>`
-- `registerSipAccount(gatewayId, options)`: Register new SIP account. Returns `Promise<Object>`
-- `provisionClientCertificate(requestBody)`: Provision client certificate. Returns `Promise<Object>`
-
-### registerDevice(options)
-
-Register device and provision certificates.
-
-**Options:**
-- `plantId` (string): Plant UUID to target (required if `gatewayId` not provided)
-- `gatewayId` (string): Gateway module UUID (optional, inferred from plantId if omitted)
-- `clientName` (string): Custom name for SIP account registration (default: "first-connection")
-- `forceCertificates` (boolean): Force certificate provisioning even without new SIP registration (default: false)
-- `debug` (boolean): Enable verbose logging for registration flow (default: false)
-- `emitter` (EventEmitter): Optional custom event emitter (default: internal emitter forwarded to auth)
-
-**Returns:** `Promise<{ sipAccount, certificates }>`
-
-**Example:**
-```javascript
-const result = await auth.registerDevice({ 
-  plantId: plants[0].id,
-  clientName: 'My Smart Lock',
-  debug: true 
-});
-
-console.log('SIP Account:', result.sipAccount);
-console.log('Certificates:', result.certificates);
-```
-
-### createSipListener(sipAccount, certs, opts)
-
-**NEW** Factory method in `BticinoAuthentication` to create persistent SIP listener for doorbell notifications.
-
-**Parameters:**
-- `sipAccount` (Object): SIP account from `deviceRegistered` event or saved data
-  - `sipUri` (string): SIP URI (e.g., "user_clientId@gateway.bs.iotleg.com")
-  - `sipPassword` (string): SIP password
-  - `plantId` (string): Plant ID
-  - `gatewayId` (string, optional): Gateway ID
-- `certs` (Object): Certificates from `certificatesCreated` event or saved data
-  - `cert` (string): Certificate PEM string
-  - `key` (string): Private key PEM string
-- `opts` (Object, optional): Listener options
-  - `debug` (boolean): Enable debug logging (inherits from auth if not specified)
-  - `keepAlive` (boolean): Re-register periodically (default: true)
-  - `autoReconnect` (boolean): Reconnect on disconnect (default: true)
-  - `keepAliveInterval` (number): Keep-alive interval in ms (default: from config)
-  - `reconnectDelay` (number): Reconnect delay in ms (default: from config)
-
-**Returns:** `BticinoSipListener` - Configured listener instance
-
-**Features:**
-- Automatic event forwarding through `auth` with `sip:` prefix
-- Integrated with certificate manager for graceful restart on certificate renewal
-- Automatic validation of sipAccount and certificates
-- Uses centralized SIP configuration from `config.js`
-
-**Example:**
-```javascript
-const listener = auth.createSipListener(sipAccount, certs, { debug: true });
-
-auth.on('sip:invite', (callInfo) => {
-  console.log('🔔 Doorbell!', callInfo);
-});
-
-await listener.connect();
-await listener.register();
-```
-
-### BticinoSipListener
-
-**NEW** Persistent SIP listener for receiving doorbell notifications.
-
-**Constructor:**
-```javascript
-new BticinoSipListener(sipConfig, certs, opts)
-```
+High-level video streaming orchestrator.
 
 **Methods:**
-- `connect()`: Establish persistent TLS connection. Returns `Promise<void>`
-- `register()`: Send SIP REGISTER with digest auth. Returns `Promise<void>`
-- `disconnect()`: Gracefully close connection. Returns `Promise<void>`
-- `updateCertificates(newCerts)`: **NEW** Update certificates with graceful restart (disconnect, update, reconnect). Returns `Promise<void>`
+- `startStream(cameraId, opts)`: Negotiate SIP video INVITE, start SRTP decryption, and launch RTSP loopback server. Returns `Promise<{ rtspUrl, cameraId, cameraIndex, port }>`
+- `stopStream()`: Send SIP BYE, terminate UDP/TLS sockets, and stop RTSP server. Returns `Promise<void>`
+- `captureSingleSnapshot(cameraId, options)`: Capture an on-demand JPEG snapshot from the specified camera and channel. Returns `Promise<Buffer>`
+- `hasSnapshot()`: Check if at least one H.264 video keyframe is cached. Returns `boolean`
+- `hasJpegSnapshot()`: Check if at least one JPEG snapshot is cached. Returns `boolean`
+- `getLatestSnapshot()`: Retrieve raw Annex-B H.264 keyframe buffer. Returns `Buffer|null`
+- `getLatestJpegSnapshot()`: Retrieve encoded JPEG image buffer. Returns `Buffer|null`
 
-**Events:**
-- `connected`: TLS connection established
-- `disconnected`: Connection lost (may auto-reconnect if enabled)
-- `registered`: SIP REGISTER successful
-- `invite`: Incoming INVITE (doorbell). Payload: `{ timestamp, from, to, callId }`
-- `message`: Incoming MESSAGE. Payload: `{ from, to, body }`
-- `certificatesUpdated`: Certificates updated successfully with graceful restart
-- `certificateUpdateError`: Failed to update certificates
-- `error`: Error occurred. Payload: `{ message, code }`
+---
 
-**Note:** When using `auth.createSipListener()`, all events are automatically forwarded through the `auth` object with `sip:` prefix for centralized event handling.
+### BticinoSnapshotExtractor
+
+RFC 6184 RTP H.264 depacketizer with WebAssembly-based H.264 decoding and JPEG encoding.
+
+**Methods:**
+- `processRtpPacket(rtpPacket)`: Process decrypted plaintext RTP packet and assemble NAL units
+- `convertKeyframeToJpeg(keyframeBuffer, quality)`: Decode Annex-B keyframe into JPEG buffer. Returns `Buffer|null`
+- `hasSnapshot()`: Check if an Annex-B keyframe is available. Returns `boolean`
+- `hasJpegSnapshot()`: Check if a JPEG snapshot is available. Returns `boolean`
+- `getLatestKeyframe()`: Return Annex-B Buffer or `null`
+- `getLatestSnapshot()`: Alias for `getLatestKeyframe()`. Returns Annex-B Buffer or `null`
+- `getLatestJpegSnapshot()`: Return JPEG Buffer or `null`
+- `getSps()`: Return cached SPS NAL unit buffer or `null`
+- `getPps()`: Return cached PPS NAL unit buffer or `null`
+- `reset()`: Clear internal parameter sets (SPS/PPS) and cached frames
+
+---
+
+### BticinoRtspLoopbackServer
+
+Lightweight RFC 2326 RTSP server providing interleaved TCP and UDP RTP streaming.
+
+**Methods:**
+- `start()`: Bind TCP port (default: `0` for ephemeral) and start listening. Returns `Promise<{ port, url, rtspUrl }>`
+- `setParameterSets(sps, pps)`: Store H.264 SPS/PPS NAL units for `sprop-parameter-sets` SDP negotiation
+- `sendRtpPacket(rtpPacket)`: Send RTP packet to all active playing RTSP sessions
+- `broadcastRtp(rtpPacket)`: Alias for `sendRtpPacket(rtpPacket)`
+- `getActiveSessionCount()`: Return number of active playing RTSP client sessions
+- `isRunning()`: Check server status. Returns `boolean`
+- `stop()`: Close active client connections and shutdown TCP server. Returns `Promise<void>`
+
+---
+
+### BticinoSrtpDecryptor
+
+RFC 3711 SRTP decryption engine.
+
+**Methods:**
+- `decrypt(packet)`: Decrypt encrypted SRTP packet payload using AES-128-CTR and strip authentication tag. Returns `Buffer|null`
+
+---
 
 ### BticinoControls
 
-High-level gate control.
+High-level actuation helper.
 
 **Methods:**
-- `openGate(gateId, plantId, cert, key, sipAccount, opts)`: Open gate
+- `openGate(gateId, plantId, certPEM, keyPEM, sipAccount, opts)`: Open lock or pedestrian gate via ephemeral SIP TLS socket. Returns `Promise<void>`
 
-### BticinoSipClient
+---
 
-Low-level SIP client for custom implementations (ephemeral connections).
+## Running Tests
 
-**Constructor:**
-```javascript
-new BticinoSipClient(sipConfig, gateId, plantId, gatewayId, opts, certs)
+The library includes an automated test suite that runs completely in-memory using mock data and RFC test vectors. **No network connection or real credentials are required.**
+
+Run the complete test suite:
+```bash
+npm test
 ```
 
-**Methods:**
-- `connect()`: Establish TLS connection
-- `register()`: Send SIP REGISTER
-- `sendGateOpenCommand()`: Send gate open MESSAGE
-- `disconnect()`: Close connection
+Run specific test suites:
+```bash
+# SIP listener & event integration tests
+npm run test:integration
 
+# Certificate auto-renewal & graceful restart tests
+npm run test:lifecycle
 
+# YUV420 to JPEG conversion tests
+npm run test:snapshot
+
+# SRTP, RTSP loopback, and streaming pipeline tests
+npm run test:video
+
+# Public package export integrity validation
+npm run test:exports
 ```
 
-## Data Persistence
-
-The library uses the following file structure for persistence:
-
-```
-token/
-  ├── token_cache.json      # OAuth tokens
-  └── sip_account.json      # SIP credentials
-
-certs/
-  └── client-certs.json     # Client certificate bundle
-```
-
-**Token Format:**
-```json
-{
-  "b2cAccessToken": "eyJhbG...",
-  "b2cRefreshToken": "eyJraW...",
-  "expiresIn": 3600,
-  "receivedAt": 1234567890000,
-  "expiresAt": 1234571490000
-}
-```
-
-**SIP Account Format:**
-```json
-{
-  "sipId": "e5228bc0-...",
-  "sipUri": "user_clientId@gateway.bs.iotleg.com",
-  "clientId": "130325245365814065359",
-  "clientName": "Node.js Gate Opener",
-  "username": "user@example.com",
-  "userOid": "be372a9a-...",
-  "sipPassword": "jk3Z2470",
-  "appId": null,
-  "plantId": "e914f49e-...",
-  "gatewayId": "318cc3ea-...",
-  "ownerId": "be372a9a-...",
-  "ownerEmail": "user@example.com"
-}
-```
-
-**Certificate Bundle Format:**
-```json
-{
-  "cert": "-----BEGIN CERTIFICATE-----\n...",
-  "key": "-----BEGIN PRIVATE KEY-----\n..."
-}
-```
-
-## Doorbell Notifications (Persistent Listener)
-
-The library includes a **persistent SIP listener** for receiving real-time doorbell notifications:
-
-**Key Features:**
-- **Persistent Connection**: Maintains long-lived TLS connection to SIP server
-- **Automatic Reconnection**: Reconnects automatically if connection drops
-- **Keep-Alive**: Periodic re-registration to maintain SIP session
-- **Event-Driven**: Emits events for doorbell rings, connection status, and errors
-- **Graceful Certificate Updates**: Automatically restarts with new certificates during renewal
-- **Centralized Events**: All events forwarded through `auth` object with `sip:` prefix
-
-**Basic Usage:**
-
-```javascript
-const auth = new BticinoAuthentication({ initialTokens: savedTokens });
-await auth.authenticate();
-
-// Create listener using factory method (automatically integrated!)
-const listener = auth.createSipListener(sipAccount, certs);
-
-// Listen for doorbell events through auth (centralized)
-auth.on('sip:invite', (callInfo) => {
-  console.log('🔔 Doorbell pressed!');
-  console.log('Time:', callInfo.timestamp);
-  console.log('From:', callInfo.from);
-});
-
-auth.on('sip:connected', () => console.log('Listener connected'));
-auth.on('sip:registered', () => console.log('Listening for doorbell...'));
-
-// Start listening
-await listener.connect();
-await listener.register();
-```
-
-## Certificate Automatic Refresh with Graceful Restart
-
-The library includes **automatic certificate renewal with graceful restart** for the SIP listener:
-
-- **Default Renewal Skew**: 30 days before expiry (2,592,000 seconds)
-- **Automatic Scheduling**: Calculates and schedules renewal before expiration
-- **Polling Strategy**: Weekly background checks (every 7 days) to detect when renewal is due
-- **Event-Driven**: Emits `certificatesRefreshed` event when renewed
-- **Transparent**: Works in background without consumer intervention
-- **Production-Ready**: Uses polling instead of setTimeout to handle long certificate lifetimes (~8 months)
-- **Graceful Restart**: When using `createSipListener()`, the listener automatically restarts with new certificates
-- **Service Continuity**: Minimal downtime (~1-2 seconds) during certificate update
-
-**Basic Usage:**
-
-```javascript
-// Load certificates at startup
-const certs = loadCertificatesFromDisk();
-const sipAccount = loadSipAccountFromDisk();
-
-if (certs && sipAccount) {
-  // Initialize certificate manager with renewal params
-  auth.setCertificates(certs.cert, certs.key, {
-    ownerId: sipAccount.ownerId,
-    ownerEmail: sipAccount.ownerEmail,
-    deviceId: sipAccount.sipClientId,
-    plantId: sipAccount.plantId,
-    gatewayId: sipAccount.gatewayId
-  });
-}
-
-// Create listener - will automatically update certificates when renewed
-const listener = auth.createSipListener(sipAccount, certs);
-
-// Listen for automatic certificate updates (graceful restart)
-auth.on('sip:certificatesUpdated', (newCerts) => {
-  console.log('Listener restarted with new certificates automatically!');
-  console.log('New expiry:', newCerts.expiresAt);
-  saveCertificatesToDisk(newCerts.cert, newCerts.key);
-});
-
-// Also listen for certificate manager renewals
-auth.on('certificatesRefreshed', (certs, meta) => {
-  console.log('Certificates auto-renewed!');
-  console.log('New expiry:', certs.expiresAt);
-  // Listener will automatically receive new certs and restart
-});
-
-// Force manual renewal if needed
-await auth.forceRenewCertificates();
-```
-
-
-## Examples
-
-### Complete Flow Example
-
-See `examples/auth_and_save.js` for a complete example showing:
-1. Authentication with token persistence
-2. Device registration with event handling
-3. Certificate provisioning
-4. Data persistence to disk
-
-### Doorbell Listener Example
-
-See `examples/listen_doorbell.js` for a persistent doorbell listener showing:
-1. Loading saved credentials from disk
-2. Creating integrated SIP listener with factory method
-3. Handling doorbell events with centralized event pattern
-4. Automatic certificate refresh with graceful restart
-5. Graceful shutdown handling
-
-### Certificate Lifecycle Demo
-
-See `examples/certificate_lifecycle_demo.js` for automatic certificate management:
-1. Automatic certificate renewal detection (30 days before expiry)
-2. Graceful listener restart with new certificates
-3. Zero-downtime certificate updates
-4. Event monitoring for certificate lifecycle
-
-### Reusing Saved Credentials
-
-See `examples/open_from_saved.js` for opening a gate using previously saved:
-- Tokens
-- SIP account
-- Certificates
-
-## Architecture
-
-### Authentication Flow
-
-1. **Proxy Start**: Local proxy starts on configured host/port
-2. **Browser Login**: User completes Azure AD B2C login in browser
-3. **Code Capture**: Proxy intercepts redirect and captures auth code
-4. **Token Exchange**: Exchange code for access + refresh tokens
-5. **Token Refresh**: Automatic scheduled refresh before expiry
-
-### Device Registration Flow
-
-1. **API Discovery**: Fetch plants and modules
-2. **Gateway Selection**: Identify gateway module
-3. **SIP Registration**: Register new SIP account with server
-4. **Key Generation**: Generate ECC P-256 keypair
-5. **CSR Creation**: Create Certificate Signing Request with SAN
-6. **Certificate Provision**: Submit CSR and receive signed certificate
-7. **Event Emission**: Emit events with credentials for persistence
-
-### Gate Control Flow
-
-1. **TLS Connection**: Establish mTLS connection to SIP server
-2. **SIP REGISTER**: Register with SIP server using digest auth
-3. **SIP MESSAGE**: Send JSON-RPC gate open command
-4. **Response Handling**: Parse SIP responses and confirm success
-
-## Debugging
-
-Enable debug mode for verbose logging:
-
-```javascript
-const auth = new BticinoAuthentication({ debug: true });
-const api = auth.createApiClient({ debug: true });
-
-await BticinoControls.openGate(
-  gateId, plantId, cert, key, sipAccount, 
-  { debug: true }
-);
-```
-
-Debug output includes:
-- HTTP requests/responses
-- SIP messages (REGISTER, MESSAGE)
-- TLS connection details
-- Token refresh scheduling
-- Certificate provisioning steps
+---
 
 ## Security Considerations
 
-- **Never commit** tokens, SIP passwords, or private keys to version control
-- Store certificates securely with appropriate file permissions
-- Use environment variables for sensitive configuration
-- Tokens are automatically refreshed; avoid manual refresh unless needed
-- Client certificates use mTLS for secure SIP communication
-
-## Limitations
-
-- Requires active BTicino/Legrand cloud account
-- Gate must be connected to cloud service
-- SIP credentials expire and may require re-registration
-- Certificates may need renewal (check expiration dates)
-
-## Troubleshooting
-
-### "No SIP account found"
-Run device registration to create SIP account:
-```javascript
-await auth.registerDevice({ plantId, debug: true });
-```
-
-### "Certificate or key not found"
-Certificates are created during device registration. Listen for `certificatesCreated` event and persist to disk.
-
-### "401 Unauthorized" on API calls
-Token expired. Force refresh:
-```javascript
-await auth.forceRefresh();
-```
-
-### "SIP authentication failed"
-Check SIP password in saved account matches server. May need to re-register device.
+- **Never commit** real tokens, SIP passwords, private keys, certificates, or device/plant dumps to version control.
+- `.gitignore` excludes `certs/`, `token/`, `json/`, `examples/*.json`, `.env*`, `*.pem`, `*.key`, `*.crt`, `*.log`, and manual credentialed test scripts.
+- Client certificates use mutual TLS (mTLS) with ECC P-256 keys to communicate with BTicino cloud infrastructure.
+- All automated tests in `test/` use mocked cryptographic vectors and dummy credentials.
 
 ## License
 
 MIT
 
+## Author
+
+**Simone Di Maio** — [GitHub](https://github.com/s-dimaio)
+
 ## Disclaimer
 
-This project is not affiliated with or endorsed by BTicino or Legrand. Use at your own risk. The author is not responsible for any damage or unauthorized access resulting from the use of this software.
-
-## Contributing
-
-Contributions welcome! Please open an issue or pull request on GitHub.
-
-## Acknowledgments
-
-- BTicino/Legrand for their cloud infrastructure
-- The Node.js community for excellent libraries
-- PKI.js for pure JavaScript certificate handling
+This project is an independent open-source library and is not affiliated with, maintained, or endorsed by BTicino or Legrand.

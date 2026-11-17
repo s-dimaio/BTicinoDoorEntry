@@ -232,6 +232,85 @@ try {
   process.exit(1);
 }
 
+// Test 9: Verify CANCEL handling - callAnswered vs callMissed differentiation
+console.log('9️⃣ Testing CANCEL handling (callAnswered vs callMissed differentiation)...');
+try {
+  const auth4 = new BticinoAuthentication({ debug: false });
+  const listener4 = auth4.createSipListener(mockSipAccount, mockCerts, { keepAlive: false });
+
+  let missedEvents = [];
+  let answeredEvents = [];
+  let authMissedEvents = [];
+  let authAnsweredEvents = [];
+
+  listener4.on('callMissed', (info) => { missedEvents.push(info); });
+  listener4.on('callAnswered', (info) => { answeredEvents.push(info); });
+  auth4.on('sip:callMissed', (info) => { authMissedEvents.push(info); });
+  auth4.on('sip:callAnswered', (info) => { authAnsweredEvents.push(info); });
+
+  // 1. Simulate incoming INVITE
+  listener4._handleInvite({
+    type: 'request',
+    method: 'INVITE',
+    headers: {
+      'call-id': 'call-101',
+      from: '<sip:diy@gateway.bs.iotleg.com>',
+      to: '<sip:user@gateway.bs.iotleg.com>'
+    },
+    body: ''
+  });
+
+  // 2. Simulate CANCEL without cause=200 (Missed Call / Timeout)
+  listener4._sendRaw = () => {}; // Stub raw write
+  listener4._handleRequest({
+    type: 'request',
+    method: 'CANCEL',
+    headers: {
+      'call-id': 'call-101',
+      reason: 'SIP;cause=487;text="Request Terminated"'
+    }
+  });
+
+  console.assert(missedEvents.length === 1, 'Should emit callMissed when Reason is not cause=200');
+  console.assert(answeredEvents.length === 0, 'Should not emit callAnswered for missed call');
+  console.assert(authMissedEvents.length === 1, 'Should forward sip:callMissed through auth');
+  console.assert(authAnsweredEvents.length === 0, 'Should not forward sip:callAnswered for missed call');
+  console.assert(missedEvents[0].callId === 'call-101', 'callMissed should carry callId');
+
+  // 3. Simulate another INVITE
+  listener4._handleInvite({
+    type: 'request',
+    method: 'INVITE',
+    headers: {
+      'call-id': 'call-102',
+      from: '<sip:diy@gateway.bs.iotleg.com>',
+      to: '<sip:user@gateway.bs.iotleg.com>'
+    },
+    body: ''
+  });
+
+  // 4. Simulate CANCEL with Reason cause=200 (Answered Elsewhere)
+  listener4._handleRequest({
+    type: 'request',
+    method: 'CANCEL',
+    headers: {
+      'call-id': 'call-102',
+      reason: 'SIP;cause=200;text="Call completed elsewhere"'
+    }
+  });
+
+  console.assert(answeredEvents.length === 1, 'Should emit callAnswered when Reason has cause=200');
+  console.assert(missedEvents.length === 1, 'missedEvents count should remain 1');
+  console.assert(authAnsweredEvents.length === 1, 'Should forward sip:callAnswered through auth');
+  console.assert(answeredEvents[0].callId === 'call-102', 'callAnswered should carry callId');
+  console.assert(answeredEvents[0].answeredElsewhere === true, 'answeredElsewhere should be true');
+
+  console.log('✅ CANCEL handling correctly differentiates callAnswered and callMissed\n');
+} catch (err) {
+  console.error('❌ CANCEL handling test failed:', err.message);
+  process.exit(1);
+}
+
 // Summary
 console.log('=' .repeat(60));
 console.log('✅ All integration tests passed!');

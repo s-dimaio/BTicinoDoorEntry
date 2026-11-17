@@ -45,6 +45,10 @@ const BticinoAuthentication = require('./lib/auth/BticinoAuthentication');
 const BticinoApiClient = require('./lib/api/BticinoApiClient');
 const { BticinoSipClient, openGate } = require('./lib/sip/BticinoControls');
 const { BticinoSipListener } = require('./lib/sip/BticinoSipListener');
+const BticinoVideoStreamer = require('./lib/video/BticinoVideoStreamer');
+const BticinoRtspLoopbackServer = require('./lib/video/BticinoRtspLoopbackServer');
+const BticinoSrtpDecryptor = require('./lib/video/BticinoSrtpDecryptor');
+const BticinoSnapshotExtractor = require('./lib/video/BticinoSnapshotExtractor');
 const config = require('./lib/config/config');
 
 // Package metadata
@@ -69,6 +73,20 @@ module.exports = {
   
   /** High-level helper function to open gate */
   openGate,
+  
+  // ===== Video Streaming & Decryption =====
+
+  /** High-level video streamer orchestrating SIP INVITE, SRTP decryption, and RTSP loopback */
+  BticinoVideoStreamer,
+
+  /** RFC 2326 RTSP loopback streaming server for Homey createVideoRTSP */
+  BticinoRtspLoopbackServer,
+
+  /** RFC 3711 AES_CM_128_HMAC_SHA1_80 SRTP packet decryptor */
+  BticinoSrtpDecryptor,
+
+  /** RFC 6184 H.264 RTP depacketizer and IDR keyframe snapshot extractor */
+  BticinoSnapshotExtractor,
   
   // ===== Configuration =====
   

@@ -1,12 +1,14 @@
 {
   "name": "bticino-door-entry",
-  "version": "2.0.13",
+  "version": "2.1.0",
   "description": "BTicino Door Entry library with Azure B2C auth flow analysis",
   "main": "index.js",
   "scripts": {
-    "test": "node test/sip_listener_integration.js && node test/certificate_lifecycle.js",
+    "test": "node test/sip_listener_integration.js && node test/certificate_lifecycle.js && node test/test_snapshot_jpeg.js && node test/test_video_stream.js && node test/package_exports.js",
     "test:integration": "node test/sip_listener_integration.js",
     "test:lifecycle": "node test/certificate_lifecycle.js",
+    "test:snapshot": "node test/test_snapshot_jpeg.js",
+    "test:video": "node test/test_video_stream.js",
     "test:exports": "node test/package_exports.js"
   },
   "keywords": [
@@ -30,7 +32,9 @@
     "asn1js": "^3.0.6",
     "axios": "^1.7.2",
     "express": "^4.19.2",
+    "h264decoder": "^1.0.0",
     "http-proxy-middleware": "^2.0.6",
+    "jpeg-js": "^0.4.4",
     "pkijs": "^3.3.3",
     "pvutils": "^1.1.3"
   }

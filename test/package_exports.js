@@ -23,10 +23,14 @@ console.log('  Version:', bticino.version);
 console.log('  Description:', bticino.description);
 
 console.log('\nExported Classes:');
-console.log('  ✅ BticinoAuthentication:', typeof bticino.BticinoAuthentication);
-console.log('  ✅ BticinoApiClient:', typeof bticino.BticinoApiClient);
-console.log('  ✅ BticinoSipClient:', typeof bticino.BticinoSipClient);
-console.log('  ✅ BticinoSipListener:', typeof bticino.BticinoSipListener);
+console.log('  BticinoAuthentication:', typeof bticino.BticinoAuthentication);
+console.log('  BticinoApiClient:', typeof bticino.BticinoApiClient);
+console.log('  BticinoSipClient:', typeof bticino.BticinoSipClient);
+console.log('  BticinoSipListener:', typeof bticino.BticinoSipListener);
+console.log('  BticinoVideoStreamer:', typeof bticino.BticinoVideoStreamer);
+console.log('  BticinoRtspLoopbackServer:', typeof bticino.BticinoRtspLoopbackServer);
+console.log('  BticinoSrtpDecryptor:', typeof bticino.BticinoSrtpDecryptor);
+console.log('  BticinoSnapshotExtractor:', typeof bticino.BticinoSnapshotExtractor);
 
 console.log('\nExported Functions:');
 console.log('  ✅ openGate:', typeof bticino.openGate);
